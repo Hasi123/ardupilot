@@ -1584,6 +1584,7 @@ bool ModeAuto::verify_payload_place()
     const float hover_throttle_placed_fraction = 0.7; // i.e. if throttle is less than 70% of hover we have placed
     const float descent_throttle_placed_fraction = 0.9; // i.e. if throttle is less than 90% of descent throttle we have placed
     const uint16_t placed_time = 500; // how long we have to be below a throttle threshold before considering placed
+    const uint16_t final_alt = 300; // final altitude to hover at
 
     const float current_throttle_level = motors->get_throttle();
     const uint32_t now = AP_HAL::millis();
@@ -1677,26 +1678,9 @@ bool ModeAuto::verify_payload_place()
         nav_payload_place.state = PayloadPlaceStateType_Releasing_Start;
         FALLTHROUGH;
     case PayloadPlaceStateType_Releasing_Start:
-#if GRIPPER_ENABLED == ENABLED
-        if (g2.gripper.valid()) {
-            gcs().send_text(MAV_SEVERITY_INFO, "Releasing the gripper");
-            g2.gripper.release();
-        } else {
-            gcs().send_text(MAV_SEVERITY_INFO, "Gripper not valid");
-            nav_payload_place.state = PayloadPlaceStateType_Ascending_Start;
-            break;
-        }
-#else
-        gcs().send_text(MAV_SEVERITY_INFO, "Gripper code disabled");
-#endif
         nav_payload_place.state = PayloadPlaceStateType_Releasing;
         FALLTHROUGH;
     case PayloadPlaceStateType_Releasing:
-#if GRIPPER_ENABLED == ENABLED
-        if (g2.gripper.valid() && !g2.gripper.released()) {
-            return false;
-        }
-#endif
         nav_payload_place.state = PayloadPlaceStateType_Released;
         FALLTHROUGH;
     case PayloadPlaceStateType_Released: {
@@ -1705,7 +1689,8 @@ bool ModeAuto::verify_payload_place()
         FALLTHROUGH;
     case PayloadPlaceStateType_Ascending_Start: {
         Location target_loc = inertial_nav.get_position();
-        target_loc.alt = nav_payload_place.descend_start_altitude;
+	target_loc.alt += final_alt;
+        gcs().send_text(MAV_SEVERITY_INFO, "Climbing to alt: %f", static_cast<double>(target_loc.alt));
         wp_start(target_loc);
         nav_payload_place.state = PayloadPlaceStateType_Ascending;
         }
@@ -1717,6 +1702,7 @@ bool ModeAuto::verify_payload_place()
         nav_payload_place.state = PayloadPlaceStateType_Done;
         FALLTHROUGH;
     case PayloadPlaceStateType_Done:
+	gcs().send_text(MAV_SEVERITY_INFO, "Payload place done");
         return true;
     default:
         // this should never happen
